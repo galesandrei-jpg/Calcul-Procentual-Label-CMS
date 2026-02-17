@@ -64,7 +64,7 @@ def month_range_min_max_for_month_dimension(selected: List[str]) -> Tuple[str, s
 # -----------------------------
 st.title("YouTube CMS Revenue → Google Sheets")
 st.caption(
-    "Pulls monthly **estimatedRevenue** for 3 CMS groups (Total + US) in **EUR** and writes into a Google Sheet. "
+    "Pulls monthly **estimatedRevenue** for 3 CMS groups (Total + US) and writes into a Google Sheet. "
     "Supports any year/month range and can auto-create missing month rows chronologically."
 )
 
@@ -74,9 +74,8 @@ with st.expander("1) Configuration (from secrets)", expanded=True):
     # YouTube / OAuth
     default_owner = st.secrets.get("youtube", {}).get("content_owner", "")
     default_on_behalf = st.secrets.get("youtube", {}).get("on_behalf_of_content_owner", "")
-    default_currency = st.secrets.get("youtube", {}).get("currency", "EUR")
 
-    col1, col2, col3 = st.columns(3)
+    col1, col2 = st.columns(2)
     with col1:
         content_owner = st.text_input(
             "YouTube CMS Content Owner ID (from /owner/<ID>)",
@@ -87,13 +86,7 @@ with st.expander("1) Configuration (from secrets)", expanded=True):
         on_behalf = st.text_input(
             "onBehalfOfContentOwner (kept for config)",
             value=default_on_behalf,
-            help="Kept for config; reports.query uses ids=contentOwner==...",
-        )
-    with col3:
-        currency = st.text_input(
-            "Revenue currency (ISO code)",
-            value=(default_currency or "EUR"),
-            help="Example: EUR. The app requests this currency directly from YouTube Analytics.",
+            help="Current YouTube client build does NOT pass onBehalf* into reports.query().",
         )
 
     # Google Sheet
@@ -132,7 +125,6 @@ with st.expander("1) Configuration (from secrets)", expanded=True):
                 cfg = YoutubeConfig(
                     content_owner=content_owner.strip(),
                     on_behalf_of_content_owner=on_behalf.strip() or None,
-                    currency=(currency.strip().upper() or "EUR"),
                 )
                 yta = build_yta_service(cfg)
                 groups = list_groups(yta, cfg)
@@ -141,9 +133,9 @@ with st.expander("1) Configuration (from secrets)", expanded=True):
             except Exception as e:
                 st.error(f"Failed to load groups: {e}")
 
-        groups_list = st.session_state.get("groups_list", [])
-        if groups_list:
-            name_to_id = {g["title"]: g["id"] for g in groups_list}
+        groups = st.session_state.get("groups_list", [])
+        if groups:
+            name_to_id = {g["title"]: g["id"] for g in groups}
             titles = sorted(name_to_id.keys())
 
             st.write("Pick three groups (these set the ID fields above):")
@@ -238,7 +230,6 @@ with st.expander("3) Run", expanded=True):
             ycfg = YoutubeConfig(
                 content_owner=content_owner.strip(),
                 on_behalf_of_content_owner=on_behalf.strip() or None,
-                currency=(currency.strip().upper() or "EUR"),
             )
             yta = build_yta_service(ycfg)
 
@@ -285,7 +276,7 @@ with st.expander("3) Run", expanded=True):
             done = 0
 
             for group_name, group_id in groups:
-                status.info(f"Querying TOTAL revenue for {group_name} (currency={ycfg.currency}) …")
+                status.info(f"Querying TOTAL revenue for {group_name} …")
                 total_map = query_monthly_estimated_revenue(
                     yta,
                     ycfg,
@@ -293,13 +284,12 @@ with st.expander("3) Run", expanded=True):
                     endDate=endDate,
                     group_id=group_id,
                     country=None,
-                    currency=ycfg.currency,
                 )
                 results_total[group_name] = total_map
                 done += 1
                 progress.progress(done / steps)
 
-                status.info(f"Querying US-only revenue for {group_name} (currency={ycfg.currency}) …")
+                status.info(f"Querying US-only revenue for {group_name} …")
                 us_map = query_monthly_estimated_revenue(
                     yta,
                     ycfg,
@@ -307,7 +297,6 @@ with st.expander("3) Run", expanded=True):
                     endDate=endDate,
                     group_id=group_id,
                     country="US",
-                    currency=ycfg.currency,
                 )
                 results_us[group_name] = us_map
                 done += 1
@@ -325,16 +314,11 @@ with st.expander("3) Run", expanded=True):
                     + (" …" if len(missing_rows) > 24 else "")
                 )
 
-            # Fixed totals columns
-            COL_TOTAL_CMS = 11   # K
-            COL_TOTAL_CMS_US = 12  # L
-
             for yyyymm in selected_months:
                 row = month_to_row.get(yyyymm)
                 if not row:
                     continue
 
-                # Per-group writes
                 for group_name, _ in groups:
                     col_total = header_to_col[group_name]
                     value_total = results_total.get(group_name, {}).get(yyyymm, 0.0)
@@ -343,13 +327,6 @@ with st.expander("3) Run", expanded=True):
                     col_us = header_to_col[f"{group_name} US"]
                     value_us = results_us.get(group_name, {}).get(yyyymm, 0.0)
                     updates.append((row, col_us, value_us))
-
-                # Totals across all 3 groups -> K/L
-                total_cms = sum(results_total.get(gname, {}).get(yyyymm, 0.0) for gname, _ in groups)
-                total_cms_us = sum(results_us.get(gname, {}).get(yyyymm, 0.0) for gname, _ in groups)
-
-                updates.append((row, COL_TOTAL_CMS, total_cms))
-                updates.append((row, COL_TOTAL_CMS_US, total_cms_us))
 
             status.info("Writing values into Google Sheet…")
             batch_write_values(ws, updates)
