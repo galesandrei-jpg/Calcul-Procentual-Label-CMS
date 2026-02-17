@@ -9,12 +9,6 @@ from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 
 
-DEFAULT_SCOPES = [
-    "https://www.googleapis.com/auth/yt-analytics.readonly",
-    "https://www.googleapis.com/auth/youtube.readonly",
-]
-
-
 @dataclass
 class YoutubeConfig:
     content_owner: str
@@ -24,36 +18,32 @@ class YoutubeConfig:
 
 def _build_credentials_from_secrets() -> Credentials:
     """
-    Supports your secrets layout:
-      [youtube] -> content_owner / on_behalf_of_content_owner / currency
-      [youtube_oauth] -> client_id / client_secret / refresh_token (+ optional token_uri/scopes)
-
-    Also supports legacy fallback where oauth keys might be inside [youtube].
+    Reads OAuth from:
+      [youtube_oauth] client_id / client_secret / refresh_token / token_uri (optional)
+    Does NOT pass scopes into Credentials() to avoid invalid_scope on refresh.
     """
-    yt = st.secrets.get("youtube", {}) or {}
     yto = st.secrets.get("youtube_oauth", {}) or {}
+    yt = st.secrets.get("youtube", {}) or {}  # fallback if needed
 
     client_id = (yto.get("client_id") or yt.get("client_id") or "").strip()
     client_secret = (yto.get("client_secret") or yt.get("client_secret") or "").strip()
     refresh_token = (yto.get("refresh_token") or yt.get("refresh_token") or "").strip()
-
     token_uri = (yto.get("token_uri") or yt.get("token_uri") or "https://oauth2.googleapis.com/token").strip()
-    scopes = yto.get("scopes") or yt.get("scopes") or DEFAULT_SCOPES
 
     if not client_id or not client_secret or not refresh_token:
         raise RuntimeError(
-            "Missing OAuth secrets. Put client_id/client_secret/refresh_token in [youtube_oauth] "
-            "(or inside [youtube] as fallback)."
+            "Missing OAuth secrets. Put client_id/client_secret/refresh_token in [youtube_oauth]."
         )
 
+    # KEY FIX: no scopes passed here -> avoids invalid_scope on refresh
     creds = Credentials(
         token=None,
         refresh_token=refresh_token,
         token_uri=token_uri,
         client_id=client_id,
         client_secret=client_secret,
-        scopes=scopes,
     )
+
     creds.refresh(Request())
     return creds
 
@@ -105,7 +95,6 @@ def query_monthly_estimated_revenue(
         currency=currency_code,
     )
 
-    # fallback if library rejects "currency" kwarg
     try:
         resp = yta.reports().query(**kwargs).execute()
     except TypeError:
