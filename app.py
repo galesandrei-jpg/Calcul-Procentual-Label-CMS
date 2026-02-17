@@ -25,11 +25,13 @@ st.set_page_config(page_title="YouTube CMS Revenue → Google Sheets", layout="w
 # Helpers
 # -----------------------------
 def yyyymm_first_day(yyyymm: str) -> str:
+    """Return the first day of a month as YYYY-MM-DD."""
     y, m = map(int, yyyymm.split("-"))
     return dt.date(y, m, 1).isoformat()
 
 
 def months_between(start_yyyymm: str, end_yyyymm: str) -> List[str]:
+    """Inclusive list of YYYY-MM between start and end."""
     sy, sm = map(int, start_yyyymm.split("-"))
     ey, em = map(int, end_yyyymm.split("-"))
 
@@ -45,6 +47,12 @@ def months_between(start_yyyymm: str, end_yyyymm: str) -> List[str]:
 
 
 def month_range_min_max_for_month_dimension(selected: List[str]) -> Tuple[str, str]:
+    """
+    For YouTube Analytics reports.query with dimensions=month:
+    - startDate must be first day of a month
+    - endDate must ALSO be first day of a month
+    API returns monthly rows for each month between start and end (inclusive).
+    """
     selected_sorted = sorted(selected)
     startDate = yyyymm_first_day(selected_sorted[0])
     endDate = yyyymm_first_day(selected_sorted[-1])
@@ -63,7 +71,7 @@ st.caption(
 with st.expander("1) Configuration (from secrets)", expanded=True):
     st.write("This app reads defaults from **Streamlit secrets**. You can override below.")
 
-    # YouTube / CMS
+    # YouTube / OAuth
     default_owner = st.secrets.get("youtube", {}).get("content_owner", "")
     default_on_behalf = st.secrets.get("youtube", {}).get("on_behalf_of_content_owner", "")
     default_currency = st.secrets.get("youtube", {}).get("currency", "EUR")
@@ -116,7 +124,7 @@ with st.expander("1) Configuration (from secrets)", expanded=True):
     )
     g3_id = st.text_input("Group 3 ID", value=default_groups.get("group3_id", ""))
 
-    # Optional discovery
+    # Optional discovery (not required)
     use_discovery = st.checkbox("Load groups from YouTube (discovery)", value=False)
     if use_discovery:
         if st.button("Load groups"):
@@ -172,7 +180,7 @@ with st.expander("2) Select months (any year) + auto-create missing rows", expan
     )
 
     now = dt.date.today()
-    years = list(range(2010, now.year + 11))
+    years = list(range(2010, now.year + 11))  # extend as needed
 
     c1, c2, c3, c4 = st.columns(4)
     with c1:
@@ -194,6 +202,7 @@ with st.expander("2) Select months (any year) + auto-create missing rows", expan
         selected_months = months_between(start_yyyymm, end_yyyymm)
         st.write(f"Selected **{len(selected_months)}** months: {selected_months[0]} → {selected_months[-1]}")
 
+    # Optional: show sheet month coverage
     if sheet_id.strip() and worksheet_name.strip():
         try:
             sheet_cfg = SheetConfig(sheet_id=sheet_id.strip(), worksheet_name=worksheet_name.strip())
@@ -225,6 +234,7 @@ with st.expander("3) Run", expanded=True):
             st.stop()
 
         try:
+            # Build services
             ycfg = YoutubeConfig(
                 content_owner=content_owner.strip(),
                 on_behalf_of_content_owner=on_behalf.strip() or None,
@@ -235,6 +245,7 @@ with st.expander("3) Run", expanded=True):
             sheet_cfg = SheetConfig(sheet_id=sheet_id.strip(), worksheet_name=worksheet_name.strip())
             ws = open_sheet(sheet_cfg)
 
+            # Headers -> column indices
             headers = ws.row_values(1)
             header_to_col = find_header_columns(headers)
 
@@ -256,12 +267,14 @@ with st.expander("3) Run", expanded=True):
 
             status = st.empty()
 
+            # Ensure month rows exist (optional)
             if auto_create:
                 status.info("Ensuring month rows exist in the sheet (auto-create enabled)…")
                 month_to_row = ensure_month_rows(ws, selected_months)
             else:
                 month_to_row = build_month_row_index(ws)
 
+            # Month dimension requires start/end to be first day of month
             startDate, endDate = month_range_min_max_for_month_dimension(selected_months)
 
             results_total: Dict[str, Dict[str, float]] = {}
@@ -300,6 +313,7 @@ with st.expander("3) Run", expanded=True):
                 done += 1
                 progress.progress(done / steps)
 
+            # Build updates list
             status.info("Preparing sheet updates…")
             updates = []
 
@@ -311,14 +325,16 @@ with st.expander("3) Run", expanded=True):
                     + (" …" if len(missing_rows) > 24 else "")
                 )
 
-            COL_TOTAL_CMS = 11    # K
-            COL_TOTAL_CMS_US = 12 # L
+            # Fixed totals columns
+            COL_TOTAL_CMS = 11   # K
+            COL_TOTAL_CMS_US = 12  # L
 
             for yyyymm in selected_months:
                 row = month_to_row.get(yyyymm)
                 if not row:
                     continue
 
+                # Per-group writes
                 for group_name, _ in groups:
                     col_total = header_to_col[group_name]
                     value_total = results_total.get(group_name, {}).get(yyyymm, 0.0)
@@ -328,6 +344,7 @@ with st.expander("3) Run", expanded=True):
                     value_us = results_us.get(group_name, {}).get(yyyymm, 0.0)
                     updates.append((row, col_us, value_us))
 
+                # Totals across all 3 groups -> K/L
                 total_cms = sum(results_total.get(gname, {}).get(yyyymm, 0.0) for gname, _ in groups)
                 total_cms_us = sum(results_us.get(gname, {}).get(yyyymm, 0.0) for gname, _ in groups)
 
