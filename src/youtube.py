@@ -1,7 +1,6 @@
 from __future__ import annotations
-
 from dataclasses import dataclass
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 import streamlit as st
 from google.auth.transport.requests import Request
@@ -53,6 +52,12 @@ def build_yta_service(cfg: YoutubeConfig):
     return build("youtubeAnalytics", "v2", credentials=creds, cache_discovery=False)
 
 
+def build_youtube_data_service():
+    """Build a YouTube Data API v3 service (for channel titles etc.)."""
+    creds = _build_credentials_from_secrets()
+    return build("youtube", "v3", credentials=creds, cache_discovery=False)
+
+
 def list_groups(yta, cfg: YoutubeConfig) -> List[Dict[str, str]]:
     kwargs = {"mine": True}
     if cfg.on_behalf_of_content_owner:
@@ -67,6 +72,133 @@ def list_groups(yta, cfg: YoutubeConfig) -> List[Dict[str, str]]:
         title = (it.get("snippet", {}) or {}).get("title") or it.get("title") or gid
         out.append({"id": gid, "title": title})
     return out
+
+
+def list_group_items(yta, cfg: YoutubeConfig, group_id: str) -> List[Dict[str, str]]:
+    """
+    List all items (channels) in a YouTube Analytics group.
+    Returns list of dicts with 'channelId' key.
+    Uses pagination to get all items.
+    """
+    all_items: List[Dict[str, str]] = []
+    page_token = None
+
+    while True:
+        kwargs = {"groupId": group_id}
+        if cfg.on_behalf_of_content_owner:
+            kwargs["onBehalfOfContentOwner"] = cfg.on_behalf_of_content_owner
+        if page_token:
+            kwargs["pageToken"] = page_token
+
+        resp = yta.groupItems().list(**kwargs).execute()
+        items = resp.get("items", []) or []
+
+        for it in items:
+            resource = it.get("resource", {}) or {}
+            channel_id = resource.get("id", "")
+            if channel_id:
+                all_items.append({"channelId": channel_id})
+
+        page_token = resp.get("nextPageToken")
+        if not page_token:
+            break
+
+    return all_items
+
+
+def get_channel_titles(channel_ids: List[str]) -> Dict[str, str]:
+    """
+    Fetch channel titles from YouTube Data API v3 for a list of channel IDs.
+    Returns dict: {channel_id: channel_title}
+    Handles batching (max 50 per request).
+    """
+    yt_data = build_youtube_data_service()
+    titles: Dict[str, str] = {}
+
+    # YouTube Data API allows up to 50 IDs per request
+    batch_size = 50
+    for i in range(0, len(channel_ids), batch_size):
+        batch = channel_ids[i : i + batch_size]
+        ids_str = ",".join(batch)
+
+        resp = yt_data.channels().list(
+            part="snippet",
+            id=ids_str,
+            maxResults=batch_size,
+        ).execute()
+
+        for item in resp.get("items", []):
+            cid = item.get("id", "")
+            title = (item.get("snippet", {}) or {}).get("title", cid)
+            titles[cid] = title
+
+    return titles
+
+
+def query_channel_revenue_for_month(
+    yta,
+    cfg: YoutubeConfig,
+    year: int,
+    month: int,
+    group_id: str,
+    country: Optional[str] = None,
+) -> Dict[str, Dict[str, float]]:
+    """
+    Query per-channel revenue for a single month within a group.
+
+    Returns dict: {channel_id: {metric_name: value}}
+
+    Metrics fetched:
+    - estimatedPartnerRevenue
+    - estimatedPartnerAdRevenue
+    - estimatedPartnerPremiumRevenue
+
+    If country is specified, filters to that country only.
+    """
+    import datetime as dt
+
+    start_date = dt.date(year, month, 1).isoformat()
+    # End date: first day of same month (for month dimension, start==end means that single month)
+    end_date = start_date
+
+    metrics = "estimatedPartnerRevenue,estimatedPartnerAdRevenue,estimatedPartnerPremiumRevenue"
+
+    filters = [f"group=={group_id}"]
+    if country:
+        filters.append(f"country=={country}")
+    filters_str = ";".join(filters)
+
+    kwargs = dict(
+        ids=f"contentOwner=={cfg.content_owner}",
+        startDate=start_date,
+        endDate=end_date,
+        metrics=metrics,
+        dimensions="channel",
+        filters=filters_str,
+        currency="USD",
+    )
+
+    try:
+        resp = yta.reports().query(**kwargs).execute()
+    except TypeError:
+        kwargs.pop("currency", None)
+        resp = yta.reports().query(**kwargs).execute()
+
+    # Response rows: [channel_id, metric1, metric2, metric3]
+    column_headers = [h.get("name", "") for h in (resp.get("columnHeaders", []) or [])]
+    rows = resp.get("rows", []) or []
+
+    result: Dict[str, Dict[str, float]] = {}
+    for row in rows:
+        channel_id = str(row[0])
+        metrics_dict = {}
+        for idx, header in enumerate(column_headers):
+            if idx == 0:
+                continue  # skip the channel dimension
+            metrics_dict[header] = float(row[idx] or 0.0)
+        result[channel_id] = metrics_dict
+
+    return result
 
 
 def query_monthly_estimated_revenue(
