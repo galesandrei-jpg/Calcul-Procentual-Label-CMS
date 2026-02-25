@@ -22,6 +22,34 @@ st.set_page_config(page_title="YouTube CMS Revenue → Google Sheets", layout="w
 
 
 # -----------------------------
+# Constants: CMS Deals groups
+# -----------------------------
+CMS_DEALS_GROUPS = [
+    ("Unicorn", "WBbE5H4__OU"),
+    ("BG Music", "aZ9OPuMpAD8"),
+    ("Melosy", "Lx3MFo26GtM"),
+    ("Huta Media", "SWO-QxXWTgU"),
+    ("Magic", "Qv2RHPCUZOU"),
+    ("Pine", "BXowAx3iy4k"),
+    ("Malwin", "JGSzjsvdIDk"),
+]
+
+# Sheet header names for the new columns
+COL_K_HEADER = "Total CMS Deals"
+COL_L_HEADER = "CMS Deals (US tax)"
+COL_M_HEADER = "CMS Deals Net"
+COL_N_HEADER = "Total Distr"
+COL_O_HEADER = "Distr (US tax)"
+COL_P_HEADER = "Distr Net"
+
+# Existing sheet headers referenced in formulas
+COL_Q_HEADER = "Total General (€)"
+COL_H_HEADER = "Total label"
+COL_S_HEADER = "General US Tax"
+COL_I_HEADER = "General Net"
+
+
+# -----------------------------
 # Helpers
 # -----------------------------
 def yyyymm_first_day(yyyymm: str) -> str:
@@ -59,12 +87,22 @@ def month_range_min_max_for_month_dimension(selected: List[str]) -> Tuple[str, s
     return startDate, endDate
 
 
+def col_index_to_letter(col_idx: int) -> str:
+    """Convert a 1-based column index to a spreadsheet column letter (1='A', 2='B', ..., 27='AA')."""
+    result = ""
+    while col_idx > 0:
+        col_idx, remainder = divmod(col_idx - 1, 26)
+        result = chr(65 + remainder) + result
+    return result
+
+
 # -----------------------------
 # UI
 # -----------------------------
 st.title("YouTube CMS Revenue → Google Sheets")
 st.caption(
-    "Pulls monthly **estimatedRevenue** for 3 CMS groups (Total + US) and writes into a Google Sheet. "
+    "Pulls monthly **estimatedRevenue** for 3 CMS groups (Total + US), "
+    "aggregates 7 CMS Deals groups, computes formulas, and writes into a Google Sheet. "
     "Supports any year/month range and can auto-create missing month rows chronologically."
 )
 
@@ -98,7 +136,7 @@ with st.expander("1) Configuration (from secrets)", expanded=True):
     worksheet_name = st.text_input("Worksheet name", value=default_worksheet)
 
     # Group mapping
-    st.subheader("Group config")
+    st.subheader("Group config (original 3 groups)")
     st.write("Paste 3 CMS group IDs from URLs like: studio.youtube.com/group/<GROUP_ID>/analytics")
 
     default_groups = st.secrets.get("groups", {})
@@ -116,6 +154,11 @@ with st.expander("1) Configuration (from secrets)", expanded=True):
         "Group 3 name (Sheet header)", value=default_groups.get("group3_name", "HaHaha Art Tracks")
     )
     g3_id = st.text_input("Group 3 ID", value=default_groups.get("group3_id", ""))
+
+    # CMS Deals groups (display only, hardcoded)
+    st.subheader("CMS Deals groups (7 groups, aggregated into columns K & L)")
+    for name, gid in CMS_DEALS_GROUPS:
+        st.text(f"  • {name}: {gid}")
 
     # Optional discovery (not required)
     use_discovery = st.checkbox("Load groups from YouTube (discovery)", value=False)
@@ -240,18 +283,29 @@ with st.expander("3) Run", expanded=True):
             headers = ws.row_values(1)
             header_to_col = find_header_columns(headers)
 
+            # Original 3 groups
             groups = [
                 (g1_name.strip(), g1_id.strip()),
                 (g2_name.strip(), g2_id.strip()),
                 (g3_name.strip(), g3_id.strip()),
             ]
 
+            # Validate original group headers
             needed_headers = []
             for name, _ in groups:
                 needed_headers.append(name)
                 needed_headers.append(f"{name} US")
 
-            missing_headers = [h for h in needed_headers if h not in header_to_col]
+            # Validate new column headers
+            new_col_headers = [
+                COL_K_HEADER, COL_L_HEADER, COL_M_HEADER,
+                COL_N_HEADER, COL_O_HEADER, COL_P_HEADER,
+            ]
+            # Also need the existing referenced columns for formulas
+            formula_ref_headers = [COL_Q_HEADER, COL_H_HEADER, COL_S_HEADER, COL_I_HEADER]
+
+            all_needed = needed_headers + new_col_headers + formula_ref_headers
+            missing_headers = [h for h in all_needed if h not in header_to_col]
             if missing_headers:
                 st.error("These headers are missing from row 1 in the sheet: " + ", ".join(missing_headers))
                 st.stop()
@@ -268,11 +322,15 @@ with st.expander("3) Run", expanded=True):
             # Month dimension requires start/end to be first day of month
             startDate, endDate = month_range_min_max_for_month_dimension(selected_months)
 
+            # -------------------------------------------------------
+            # Fetch revenue for original 3 groups (Total + US)
+            # -------------------------------------------------------
             results_total: Dict[str, Dict[str, float]] = {}
             results_us: Dict[str, Dict[str, float]] = {}
 
+            # Total steps: 3 original groups × 2 + 7 CMS deals groups × 2 = 20
+            total_steps = len(groups) * 2 + len(CMS_DEALS_GROUPS) * 2
             progress = st.progress(0.0)
-            steps = len(groups) * 2
             done = 0
 
             for group_name, group_id in groups:
@@ -287,7 +345,7 @@ with st.expander("3) Run", expanded=True):
                 )
                 results_total[group_name] = total_map
                 done += 1
-                progress.progress(done / steps)
+                progress.progress(done / total_steps)
 
                 status.info(f"Querying US-only revenue for {group_name} …")
                 us_map = query_monthly_estimated_revenue(
@@ -300,9 +358,61 @@ with st.expander("3) Run", expanded=True):
                 )
                 results_us[group_name] = us_map
                 done += 1
-                progress.progress(done / steps)
+                progress.progress(done / total_steps)
 
+            # -------------------------------------------------------
+            # Fetch revenue for 7 CMS Deals groups (Total + US)
+            # -------------------------------------------------------
+            cms_deals_total: Dict[str, Dict[str, float]] = {}  # group_name -> {yyyymm: revenue}
+            cms_deals_us: Dict[str, Dict[str, float]] = {}
+
+            for deal_name, deal_id in CMS_DEALS_GROUPS:
+                status.info(f"Querying TOTAL revenue for CMS Deal: {deal_name} …")
+                total_map = query_monthly_estimated_revenue(
+                    yta,
+                    ycfg,
+                    startDate=startDate,
+                    endDate=endDate,
+                    group_id=deal_id,
+                    country=None,
+                )
+                cms_deals_total[deal_name] = total_map
+                done += 1
+                progress.progress(done / total_steps)
+
+                status.info(f"Querying US-only revenue for CMS Deal: {deal_name} …")
+                us_map = query_monthly_estimated_revenue(
+                    yta,
+                    ycfg,
+                    startDate=startDate,
+                    endDate=endDate,
+                    group_id=deal_id,
+                    country="US",
+                )
+                cms_deals_us[deal_name] = us_map
+                done += 1
+                progress.progress(done / total_steps)
+
+            # -------------------------------------------------------
+            # Aggregate CMS Deals: sum all 7 groups per month
+            # -------------------------------------------------------
+            # K values: sum of all 7 groups' total revenue per month
+            agg_total_per_month: Dict[str, float] = {}
+            # L values: sum of all 7 groups' US revenue × 0.1 per month
+            agg_us_tax_per_month: Dict[str, float] = {}
+
+            for yyyymm in selected_months:
+                total_sum = 0.0
+                us_sum = 0.0
+                for deal_name, _ in CMS_DEALS_GROUPS:
+                    total_sum += cms_deals_total.get(deal_name, {}).get(yyyymm, 0.0)
+                    us_sum += cms_deals_us.get(deal_name, {}).get(yyyymm, 0.0)
+                agg_total_per_month[yyyymm] = total_sum
+                agg_us_tax_per_month[yyyymm] = us_sum * 0.1
+
+            # -------------------------------------------------------
             # Build updates list
+            # -------------------------------------------------------
             status.info("Preparing sheet updates…")
             updates = []
 
@@ -314,11 +424,33 @@ with st.expander("3) Run", expanded=True):
                     + (" …" if len(missing_rows) > 24 else "")
                 )
 
+            # Get column letters for formula references
+            col_k_idx = header_to_col[COL_K_HEADER]
+            col_l_idx = header_to_col[COL_L_HEADER]
+            col_m_idx = header_to_col[COL_M_HEADER]
+            col_n_idx = header_to_col[COL_N_HEADER]
+            col_o_idx = header_to_col[COL_O_HEADER]
+            col_p_idx = header_to_col[COL_P_HEADER]
+            col_q_idx = header_to_col[COL_Q_HEADER]
+            col_h_idx = header_to_col[COL_H_HEADER]
+            col_s_idx = header_to_col[COL_S_HEADER]
+            col_i_idx = header_to_col[COL_I_HEADER]
+
+            col_k_letter = col_index_to_letter(col_k_idx)
+            col_l_letter = col_index_to_letter(col_l_idx)
+            col_n_letter = col_index_to_letter(col_n_idx)
+            col_o_letter = col_index_to_letter(col_o_idx)
+            col_q_letter = col_index_to_letter(col_q_idx)
+            col_h_letter = col_index_to_letter(col_h_idx)
+            col_s_letter = col_index_to_letter(col_s_idx)
+            col_i_letter = col_index_to_letter(col_i_idx)
+
             for yyyymm in selected_months:
                 row = month_to_row.get(yyyymm)
                 if not row:
                     continue
 
+                # --- Original 3 groups (same as before) ---
                 for group_name, _ in groups:
                     col_total = header_to_col[group_name]
                     value_total = results_total.get(group_name, {}).get(yyyymm, 0.0)
@@ -328,8 +460,44 @@ with st.expander("3) Run", expanded=True):
                     value_us = results_us.get(group_name, {}).get(yyyymm, 0.0)
                     updates.append((row, col_us, value_us))
 
-            status.info("Writing values into Google Sheet…")
+                # --- Column K: Total CMS Deals (computed value) ---
+                updates.append((row, col_k_idx, agg_total_per_month.get(yyyymm, 0.0)))
+
+                # --- Column L: CMS Deals (US tax) (computed value) ---
+                updates.append((row, col_l_idx, agg_us_tax_per_month.get(yyyymm, 0.0)))
+
+                # --- Column M: =K-L (formula) ---
+                formula_m = f"={col_k_letter}{row}-{col_l_letter}{row}"
+                updates.append((row, col_m_idx, formula_m))
+
+                # --- Column N: =Q-(K+H) (formula) ---
+                formula_n = f"={col_q_letter}{row}-({col_k_letter}{row}+{col_h_letter}{row})"
+                updates.append((row, col_n_idx, formula_n))
+
+                # --- Column O: =S-(L+I) (formula) ---
+                formula_o = f"={col_s_letter}{row}-({col_l_letter}{row}+{col_i_letter}{row})"
+                updates.append((row, col_o_idx, formula_o))
+
+                # --- Column P: =N-O (formula) ---
+                formula_p = f"={col_n_letter}{row}-{col_o_letter}{row}"
+                updates.append((row, col_p_idx, formula_p))
+
+            status.info("Writing values and formulas into Google Sheet…")
             batch_write_values(ws, updates)
-            status.success("Done ✅ Sheet updated.")
+            status.success("Done ✅ Sheet updated with revenue data + formulas.")
+
+            # Show summary
+            st.subheader("CMS Deals Aggregate Summary")
+            summary_data = []
+            for yyyymm in selected_months:
+                if yyyymm in month_to_row:
+                    summary_data.append({
+                        "Month": yyyymm,
+                        "Total CMS Deals (K)": f"${agg_total_per_month.get(yyyymm, 0.0):,.2f}",
+                        "CMS Deals US Tax (L)": f"${agg_us_tax_per_month.get(yyyymm, 0.0):,.2f}",
+                    })
+            if summary_data:
+                st.dataframe(pd.DataFrame(summary_data), use_container_width=True)
+
         except Exception as e:
             st.exception(e)
