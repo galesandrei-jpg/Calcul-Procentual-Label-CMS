@@ -146,12 +146,12 @@ with st.expander("3) Generate Report", expanded=True):
                 rows_data.append({
                     "Channel": cid,
                     "Channel title": title,
-                    "Estimated partner revenue (USD)": t.get("estimatedPartnerRevenue", 0.0),
-                    "Estimated partner ad revenue (USD)": t.get("estimatedPartnerAdRevenue", 0.0),
-                    "YouTube Premium partner revenue (USD)": t.get("estimatedPartnerPremiumRevenue", 0.0),
-                    "Total US": u.get("estimatedPartnerRevenue", 0.0),
-                    "US Revenue Ad": u.get("estimatedPartnerAdRevenue", 0.0),
-                    "US Revenue Premium": u.get("estimatedPartnerPremiumRevenue", 0.0),
+                    "Estimated partner revenue (USD)": t.get("estimatedRevenue", 0.0),
+                    "Estimated partner ad revenue (USD)": t.get("estimatedAdRevenue", 0.0),
+                    "YouTube Premium partner revenue (USD)": t.get("estimatedRedPartnerRevenue", 0.0),
+                    "Total US": u.get("estimatedRevenue", 0.0),
+                    "US Revenue Ad": u.get("estimatedAdRevenue", 0.0),
+                    "US Revenue Premium": u.get("estimatedRedPartnerRevenue", 0.0),
                 })
 
             df = pd.DataFrame(rows_data)
