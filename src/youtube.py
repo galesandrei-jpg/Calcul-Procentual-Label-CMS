@@ -79,18 +79,28 @@ def list_group_items(yta, cfg: YoutubeConfig, group_id: str) -> List[Dict[str, s
     List all items (channels) in a YouTube Analytics group.
     Returns list of dicts with 'channelId' key.
     Uses pagination to get all items.
+    Tries without onBehalfOfContentOwner first (matches working pattern),
+    falls back to including it if needed.
     """
     all_items: List[Dict[str, str]] = []
     page_token = None
 
+    # Try without onBehalfOfContentOwner first
     while True:
         kwargs = {"groupId": group_id}
-        if cfg.on_behalf_of_content_owner:
-            kwargs["onBehalfOfContentOwner"] = cfg.on_behalf_of_content_owner
         if page_token:
             kwargs["pageToken"] = page_token
 
-        resp = yta.groupItems().list(**kwargs).execute()
+        try:
+            resp = yta.groupItems().list(**kwargs).execute()
+        except Exception:
+            # If it fails, try with onBehalfOfContentOwner
+            if cfg.on_behalf_of_content_owner:
+                kwargs["onBehalfOfContentOwner"] = cfg.on_behalf_of_content_owner
+                resp = yta.groupItems().list(**kwargs).execute()
+            else:
+                raise
+
         items = resp.get("items", []) or []
 
         for it in items:
