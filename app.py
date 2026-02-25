@@ -1,6 +1,7 @@
 import datetime as dt
 from typing import Dict, List, Tuple
 
+import pandas as pd
 import streamlit as st
 
 from src.youtube import (
