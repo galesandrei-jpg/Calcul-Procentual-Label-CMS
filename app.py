@@ -43,11 +43,8 @@ COL_N_HEADER = "Total Distr"
 COL_O_HEADER = "Distr (US tax)"
 COL_P_HEADER = "Distr Net"
 
-# Existing sheet headers referenced in formulas
-COL_Q_HEADER = "Total General (€)"
-COL_H_HEADER = "Total Label"
-COL_S_HEADER = "General US Tax"
-COL_I_HEADER = "General Net"
+# Existing sheet columns referenced in formulas (fixed positions)
+# H = "Total Label", I = "Label US (tax)", Q = "Total General (€)", S = "General US Tax"
 
 
 # -----------------------------
@@ -302,10 +299,7 @@ with st.expander("3) Run", expanded=True):
                 COL_K_HEADER, COL_L_HEADER, COL_M_HEADER,
                 COL_N_HEADER, COL_O_HEADER, COL_P_HEADER,
             ]
-            # Also need the existing referenced columns for formulas
-            formula_ref_headers = [COL_Q_HEADER, COL_H_HEADER, COL_S_HEADER, COL_I_HEADER]
-
-            all_needed = needed_headers + new_col_headers + formula_ref_headers
+            all_needed = needed_headers + new_col_headers
             missing_headers = [h for h in all_needed if h not in header_to_col]
             if missing_headers:
                 st.error("These headers are missing from row 1 in the sheet: " + ", ".join(missing_headers))
@@ -425,26 +419,25 @@ with st.expander("3) Run", expanded=True):
                     + (" …" if len(missing_rows) > 24 else "")
                 )
 
-            # Get column letters for formula references
+            # Get column indices for K-P (looked up by header)
             col_k_idx = header_to_col[COL_K_HEADER]
             col_l_idx = header_to_col[COL_L_HEADER]
             col_m_idx = header_to_col[COL_M_HEADER]
             col_n_idx = header_to_col[COL_N_HEADER]
             col_o_idx = header_to_col[COL_O_HEADER]
             col_p_idx = header_to_col[COL_P_HEADER]
-            col_q_idx = header_to_col[COL_Q_HEADER]
-            col_h_idx = header_to_col[COL_H_HEADER]
-            col_s_idx = header_to_col[COL_S_HEADER]
-            col_i_idx = header_to_col[COL_I_HEADER]
 
+            # Column letters for K-P (derived from header lookup)
             col_k_letter = col_index_to_letter(col_k_idx)
             col_l_letter = col_index_to_letter(col_l_idx)
             col_n_letter = col_index_to_letter(col_n_idx)
             col_o_letter = col_index_to_letter(col_o_idx)
-            col_q_letter = col_index_to_letter(col_q_idx)
-            col_h_letter = col_index_to_letter(col_h_idx)
-            col_s_letter = col_index_to_letter(col_s_idx)
-            col_i_letter = col_index_to_letter(col_i_idx)
+
+            # Fixed column letters for existing sheet columns used in formulas
+            col_h_letter = "H"  # Total Label
+            col_i_letter = "I"  # Label US (tax)
+            col_q_letter = "Q"  # Total General (€)
+            col_s_letter = "S"  # General US Tax
 
             for yyyymm in selected_months:
                 row = month_to_row.get(yyyymm)
