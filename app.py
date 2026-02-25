@@ -44,7 +44,7 @@ COL_P_HEADER = "Distr Net"
 
 # Existing sheet headers referenced in formulas
 COL_Q_HEADER = "Total General (€)"
-COL_H_HEADER = "Total label"
+COL_H_HEADER = "Total Label"
 COL_S_HEADER = "General US Tax"
 COL_I_HEADER = "General Net"
 
