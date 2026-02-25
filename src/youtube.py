@@ -159,9 +159,9 @@ def query_channel_revenue_for_month(
     Returns dict: {channel_id: {metric_name: value}}
 
     Metrics fetched:
-    - estimatedPartnerRevenue
-    - estimatedPartnerAdRevenue
-    - estimatedPartnerPremiumRevenue
+    - estimatedRevenue
+    - estimatedAdRevenue
+    - estimatedRedPartnerRevenue
 
     If country is specified, filters to that country only.
     """
@@ -171,7 +171,7 @@ def query_channel_revenue_for_month(
     # End date: first day of same month (for month dimension, start==end means that single month)
     end_date = start_date
 
-    metrics = "estimatedPartnerRevenue,estimatedPartnerAdRevenue,estimatedPartnerPremiumRevenue"
+    metrics = "estimatedRevenue,estimatedAdRevenue,estimatedRedPartnerRevenue"
 
     filters = [f"group=={group_id}"]
     if country:
