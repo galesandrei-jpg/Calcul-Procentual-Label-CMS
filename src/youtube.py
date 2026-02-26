@@ -167,11 +167,14 @@ def query_channel_revenue_for_month(
     Falls back to 2 metrics if 3-metric query fails, computing Premium = Revenue - Ad.
     """
     import datetime as dt
+    import calendar
     import time
     from googleapiclient.errors import HttpError
 
     start_date = dt.date(year, month, 1).isoformat()
-    end_date = start_date
+    # End date must be the last day of the month for channel dimension queries
+    last_day = calendar.monthrange(year, month)[1]
+    end_date = dt.date(year, month, last_day).isoformat()
 
     filters = [f"group=={group_id}"]
     if country:
