@@ -284,3 +284,37 @@ def query_monthly_estimated_revenue(
     for month_str, revenue in (resp.get("rows", []) or []):
         out[str(month_str)] = float(revenue or 0.0)
     return out
+
+
+def query_monthly_total_cms_revenue(
+    yta,
+    cfg: YoutubeConfig,
+    startDate: str,
+    endDate: str,
+    currency: Optional[str] = None,
+) -> Dict[str, float]:
+    """
+    Query total CMS revenue per month across the entire content owner,
+    WITHOUT any group filter. Returns {YYYY-MM: revenue}.
+    """
+    currency_code = (currency or cfg.currency or "EUR").upper()
+
+    kwargs = dict(
+        ids=f"contentOwner=={cfg.content_owner}",
+        startDate=startDate,
+        endDate=endDate,
+        metrics="estimatedRevenue",
+        dimensions="month",
+        currency=currency_code,
+    )
+
+    try:
+        resp = yta.reports().query(**kwargs).execute()
+    except TypeError:
+        kwargs.pop("currency", None)
+        resp = yta.reports().query(**kwargs).execute()
+
+    out: Dict[str, float] = {}
+    for month_str, revenue in (resp.get("rows", []) or []):
+        out[str(month_str)] = float(revenue or 0.0)
+    return out
