@@ -9,6 +9,7 @@ from src.youtube import (
     build_yta_service,
     list_groups,
     query_monthly_estimated_revenue,
+    query_monthly_total_cms_revenue,
 )
 from src.sheets import (
     SheetConfig,
@@ -42,9 +43,10 @@ COL_M_HEADER = "CMS Deals Net"
 COL_N_HEADER = "Total Distr"
 COL_O_HEADER = "Distr (US tax)"
 COL_P_HEADER = "Distr Net"
+COL_Q_HEADER = "Total General (€)"
 
 # Existing sheet columns referenced in formulas (fixed positions)
-# H = "Total Label", I = "Label US (tax)", Q = "Total General (€)", S = "General US Tax"
+# H = "Total Label", I = "Label US (tax)", S = "General US Tax"
 
 
 # -----------------------------
@@ -100,7 +102,8 @@ def col_index_to_letter(col_idx: int) -> str:
 st.title("YouTube CMS Revenue → Google Sheets")
 st.caption(
     "Pulls monthly **estimatedRevenue** for 3 CMS groups (Total + US), "
-    "aggregates 7 CMS Deals groups, computes formulas, and writes into a Google Sheet. "
+    "aggregates 7 CMS Deals groups, fetches total CMS revenue, computes formulas, "
+    "and writes into a Google Sheet. "
     "Supports any year/month range and can auto-create missing month rows chronologically."
 )
 
@@ -294,10 +297,11 @@ with st.expander("3) Run", expanded=True):
                 needed_headers.append(name)
                 needed_headers.append(f"{name} US")
 
-            # Validate new column headers
+            # Validate new column headers (including Q)
             new_col_headers = [
                 COL_K_HEADER, COL_L_HEADER, COL_M_HEADER,
                 COL_N_HEADER, COL_O_HEADER, COL_P_HEADER,
+                COL_Q_HEADER,
             ]
             all_needed = needed_headers + new_col_headers
             missing_headers = [h for h in all_needed if h not in header_to_col]
@@ -323,8 +327,8 @@ with st.expander("3) Run", expanded=True):
             results_total: Dict[str, Dict[str, float]] = {}
             results_us: Dict[str, Dict[str, float]] = {}
 
-            # Total steps: 3 original groups × 2 + 7 CMS deals groups × 2 = 20
-            total_steps = len(groups) * 2 + len(CMS_DEALS_GROUPS) * 2
+            # Total steps: 3 original groups × 2 + 7 CMS deals groups × 2 + 1 total CMS = 21
+            total_steps = len(groups) * 2 + len(CMS_DEALS_GROUPS) * 2 + 1
             progress = st.progress(0.0)
             done = 0
 
@@ -389,6 +393,19 @@ with st.expander("3) Run", expanded=True):
                 progress.progress(done / total_steps)
 
             # -------------------------------------------------------
+            # Fetch total CMS revenue (no group filter) for column Q
+            # -------------------------------------------------------
+            status.info("Querying TOTAL CMS revenue (entire content owner) …")
+            total_cms_per_month = query_monthly_total_cms_revenue(
+                yta,
+                ycfg,
+                startDate=startDate,
+                endDate=endDate,
+            )
+            done += 1
+            progress.progress(done / total_steps)
+
+            # -------------------------------------------------------
             # Aggregate CMS Deals: sum all 7 groups per month
             # -------------------------------------------------------
             # K values: sum of all 7 groups' total revenue per month
@@ -419,24 +436,25 @@ with st.expander("3) Run", expanded=True):
                     + (" …" if len(missing_rows) > 24 else "")
                 )
 
-            # Get column indices for K-P (looked up by header)
+            # Get column indices for K-Q (looked up by header)
             col_k_idx = header_to_col[COL_K_HEADER]
             col_l_idx = header_to_col[COL_L_HEADER]
             col_m_idx = header_to_col[COL_M_HEADER]
             col_n_idx = header_to_col[COL_N_HEADER]
             col_o_idx = header_to_col[COL_O_HEADER]
             col_p_idx = header_to_col[COL_P_HEADER]
+            col_q_idx = header_to_col[COL_Q_HEADER]
 
             # Column letters for K-P (derived from header lookup)
             col_k_letter = col_index_to_letter(col_k_idx)
             col_l_letter = col_index_to_letter(col_l_idx)
             col_n_letter = col_index_to_letter(col_n_idx)
             col_o_letter = col_index_to_letter(col_o_idx)
+            col_q_letter = col_index_to_letter(col_q_idx)
 
             # Fixed column letters for existing sheet columns used in formulas
             col_h_letter = "H"  # Total Label
             col_i_letter = "I"  # Label US (tax)
-            col_q_letter = "Q"  # Total General (€)
             col_s_letter = "S"  # General US Tax
 
             for yyyymm in selected_months:
@@ -476,17 +494,21 @@ with st.expander("3) Run", expanded=True):
                 formula_p = f"={col_n_letter}{row}-{col_o_letter}{row}"
                 updates.append((row, col_p_idx, formula_p))
 
+                # --- Column Q: Total CMS revenue (fetched value) ---
+                updates.append((row, col_q_idx, total_cms_per_month.get(yyyymm, 0.0)))
+
             status.info("Writing values and formulas into Google Sheet…")
             batch_write_values(ws, updates)
             status.success("Done ✅ Sheet updated with revenue data + formulas.")
 
             # Show summary
-            st.subheader("CMS Deals Aggregate Summary")
+            st.subheader("Revenue Summary")
             summary_data = []
             for yyyymm in selected_months:
                 if yyyymm in month_to_row:
                     summary_data.append({
                         "Month": yyyymm,
+                        "Total CMS Revenue (Q)": f"${total_cms_per_month.get(yyyymm, 0.0):,.2f}",
                         "Total CMS Deals (K)": f"${agg_total_per_month.get(yyyymm, 0.0):,.2f}",
                         "CMS Deals US Tax (L)": f"${agg_us_tax_per_month.get(yyyymm, 0.0):,.2f}",
                     })
