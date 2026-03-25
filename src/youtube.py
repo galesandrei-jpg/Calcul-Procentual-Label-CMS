@@ -291,13 +291,19 @@ def query_monthly_total_cms_revenue(
     cfg: YoutubeConfig,
     startDate: str,
     endDate: str,
+    country: Optional[str] = None,
     currency: Optional[str] = None,
 ) -> Dict[str, float]:
     """
     Query total CMS revenue per month across the entire content owner,
-    WITHOUT any group filter. Returns {YYYY-MM: revenue}.
+    WITHOUT any group filter. Optionally filtered by country.
+    Returns {YYYY-MM: revenue}.
     """
     currency_code = (currency or cfg.currency or "EUR").upper()
+
+    filters_list = []
+    if country:
+        filters_list.append(f"country=={country}")
 
     kwargs = dict(
         ids=f"contentOwner=={cfg.content_owner}",
@@ -307,6 +313,8 @@ def query_monthly_total_cms_revenue(
         dimensions="month",
         currency=currency_code,
     )
+    if filters_list:
+        kwargs["filters"] = ";".join(filters_list)
 
     try:
         resp = yta.reports().query(**kwargs).execute()
