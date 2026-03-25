@@ -44,6 +44,7 @@ COL_N_HEADER = "Total Distr"
 COL_O_HEADER = "Distr (US tax)"
 COL_P_HEADER = "Distr Net"
 COL_Q_HEADER = "Total General (€)"
+COL_R_HEADER = "Total General US"
 
 # Existing sheet columns referenced in formulas (fixed positions)
 # H = "Total Label", I = "Label US (tax)", S = "General US Tax"
@@ -301,7 +302,7 @@ with st.expander("3) Run", expanded=True):
             new_col_headers = [
                 COL_K_HEADER, COL_L_HEADER, COL_M_HEADER,
                 COL_N_HEADER, COL_O_HEADER, COL_P_HEADER,
-                COL_Q_HEADER,
+                COL_Q_HEADER, COL_R_HEADER,
             ]
             all_needed = needed_headers + new_col_headers
             missing_headers = [h for h in all_needed if h not in header_to_col]
@@ -327,8 +328,8 @@ with st.expander("3) Run", expanded=True):
             results_total: Dict[str, Dict[str, float]] = {}
             results_us: Dict[str, Dict[str, float]] = {}
 
-            # Total steps: 3 original groups × 2 + 7 CMS deals groups × 2 + 1 total CMS = 21
-            total_steps = len(groups) * 2 + len(CMS_DEALS_GROUPS) * 2 + 1
+            # Total steps: 3 original groups × 2 + 7 CMS deals groups × 2 + 2 total CMS = 22
+            total_steps = len(groups) * 2 + len(CMS_DEALS_GROUPS) * 2 + 2
             progress = st.progress(0.0)
             done = 0
 
@@ -406,6 +407,20 @@ with st.expander("3) Run", expanded=True):
             progress.progress(done / total_steps)
 
             # -------------------------------------------------------
+            # Fetch total CMS US revenue (no group filter, US only) for column R
+            # -------------------------------------------------------
+            status.info("Querying TOTAL CMS US revenue (entire content owner, US only) …")
+            total_cms_us_per_month = query_monthly_total_cms_revenue(
+                yta,
+                ycfg,
+                startDate=startDate,
+                endDate=endDate,
+                country="US",
+            )
+            done += 1
+            progress.progress(done / total_steps)
+
+            # -------------------------------------------------------
             # Aggregate CMS Deals: sum all 7 groups per month
             # -------------------------------------------------------
             # K values: sum of all 7 groups' total revenue per month
@@ -444,6 +459,7 @@ with st.expander("3) Run", expanded=True):
             col_o_idx = header_to_col[COL_O_HEADER]
             col_p_idx = header_to_col[COL_P_HEADER]
             col_q_idx = header_to_col[COL_Q_HEADER]
+            col_r_idx = header_to_col[COL_R_HEADER]
 
             # Column letters for K-P (derived from header lookup)
             col_k_letter = col_index_to_letter(col_k_idx)
@@ -497,6 +513,9 @@ with st.expander("3) Run", expanded=True):
                 # --- Column Q: Total CMS revenue (fetched value) ---
                 updates.append((row, col_q_idx, total_cms_per_month.get(yyyymm, 0.0)))
 
+                # --- Column R: Total General US (fetched value) ---
+                updates.append((row, col_r_idx, total_cms_us_per_month.get(yyyymm, 0.0)))
+
             status.info("Writing values and formulas into Google Sheet…")
             batch_write_values(ws, updates)
             status.success("Done ✅ Sheet updated with revenue data + formulas.")
@@ -509,6 +528,7 @@ with st.expander("3) Run", expanded=True):
                     summary_data.append({
                         "Month": yyyymm,
                         "Total CMS Revenue (Q)": f"${total_cms_per_month.get(yyyymm, 0.0):,.2f}",
+                        "Total General US (R)": f"${total_cms_us_per_month.get(yyyymm, 0.0):,.2f}",
                         "Total CMS Deals (K)": f"${agg_total_per_month.get(yyyymm, 0.0):,.2f}",
                         "CMS Deals US Tax (L)": f"${agg_us_tax_per_month.get(yyyymm, 0.0):,.2f}",
                     })
