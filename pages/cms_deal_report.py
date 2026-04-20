@@ -1,4 +1,5 @@
 import datetime as dt
+import calendar
 import io
 from typing import Dict, List
 
@@ -12,7 +13,7 @@ from src.youtube import (
     build_yta_service,
     list_group_items,
     get_channel_titles,
-    query_channel_revenue_for_month,
+    query_channel_revenue_for_period,
 )
 
 st.set_page_config(page_title="CMS Deal Channel Report", layout="wide")
@@ -23,9 +24,10 @@ TEMPLATE_PATH = "template_raport_cms_deal.xlsx"
 
 st.title("📋 CMS Deal – Channel Revenue Report")
 st.caption(
-    "Generates per-channel revenue report for a YouTube CMS group. "
-    "Fetches channel IDs from the group, retrieves revenue metrics, "
-    "and outputs an XLSX file with formulas (columns I–M) from the template."
+    "Generates per-channel revenue report for a YouTube CMS group over any period "
+    "(single month, quarter, year, or custom range). "
+    "Fetches channel IDs from the group, retrieves revenue metrics aggregated over "
+    "the selected period, and outputs an XLSX file with formulas (columns I–M) from the template."
 )
 
 # ----- Configuration -----
@@ -47,8 +49,8 @@ with st.expander("1) Configuration", expanded=True):
             key="cms_deal_on_behalf",
         )
 
-# ----- Group ID + Month -----
-with st.expander("2) Group & Month Selection", expanded=True):
+# ----- Group ID + Period -----
+with st.expander("2) Group & Period Selection", expanded=True):
     group_id = st.text_input(
         "Channel Group ID",
         value="",
@@ -57,20 +59,53 @@ with st.expander("2) Group & Month Selection", expanded=True):
     )
 
     now = dt.date.today()
-    col1, col2 = st.columns(2)
-    with col1:
-        report_year = st.selectbox(
-            "Year",
-            list(range(2015, now.year + 2)),
-            index=list(range(2015, now.year + 2)).index(now.year),
-            key="cms_deal_year",
+    years = list(range(2015, now.year + 2))
+    months = list(range(1, 13))
+
+    st.markdown("**Start of period**")
+    c1, c2 = st.columns(2)
+    with c1:
+        start_year = st.selectbox(
+            "Start year", years,
+            index=years.index(now.year),
+            key="cms_deal_start_year",
         )
-    with col2:
-        report_month = st.selectbox(
-            "Month",
-            list(range(1, 13)),
+    with c2:
+        start_month = st.selectbox(
+            "Start month", months,
             index=now.month - 1,
-            key="cms_deal_month",
+            key="cms_deal_start_month",
+        )
+
+    st.markdown("**End of period**")
+    c3, c4 = st.columns(2)
+    with c3:
+        end_year = st.selectbox(
+            "End year", years,
+            index=years.index(now.year),
+            key="cms_deal_end_year",
+        )
+    with c4:
+        end_month = st.selectbox(
+            "End month", months,
+            index=now.month - 1,
+            key="cms_deal_end_month",
+        )
+
+    # Compute start and end dates
+    start_date_obj = dt.date(start_year, start_month, 1)
+    last_day = calendar.monthrange(end_year, end_month)[1]
+    end_date_obj = dt.date(end_year, end_month, last_day)
+
+    if end_date_obj < start_date_obj:
+        st.error("End month must be the same as or after the start month.")
+        period_valid = False
+    else:
+        period_valid = True
+        num_months = (end_year - start_year) * 12 + (end_month - start_month) + 1
+        st.info(
+            f"📅 Period: **{start_date_obj.isoformat()}** → **{end_date_obj.isoformat()}** "
+            f"({num_months} month{'s' if num_months != 1 else ''})"
         )
 
 # ----- Run -----
@@ -85,6 +120,9 @@ with st.expander("3) Generate Report", expanded=True):
         if not group_id.strip():
             st.error("Please provide a Channel Group ID.")
             st.stop()
+        if not period_valid:
+            st.error("Please fix the period selection before running.")
+            st.stop()
 
         try:
             ycfg = YoutubeConfig(
@@ -95,6 +133,9 @@ with st.expander("3) Generate Report", expanded=True):
 
             status = st.empty()
             progress = st.progress(0.0)
+
+            start_date_iso = start_date_obj.isoformat()
+            end_date_iso = end_date_obj.isoformat()
 
             # Step 1: Get channel IDs from the group
             status.info("Fetching channels from group…")
@@ -113,23 +154,23 @@ with st.expander("3) Generate Report", expanded=True):
             titles_map = get_channel_titles(channel_ids)
             progress.progress(0.30)
 
-            # Step 3: Query total revenue (all countries)
-            status.info("Querying total revenue (all countries)…")
-            total_revenue = query_channel_revenue_for_month(
+            # Step 3: Query total revenue (all countries) aggregated over the period
+            status.info(f"Querying total revenue ({start_date_iso} → {end_date_iso})…")
+            total_revenue = query_channel_revenue_for_period(
                 yta, ycfg,
-                year=report_year,
-                month=report_month,
+                start_date=start_date_iso,
+                end_date=end_date_iso,
                 group_id=group_id.strip(),
                 country=None,
             )
             progress.progress(0.60)
 
-            # Step 4: Query US-only revenue
-            status.info("Querying US-only revenue…")
-            us_revenue = query_channel_revenue_for_month(
+            # Step 4: Query US-only revenue aggregated over the period
+            status.info(f"Querying US-only revenue ({start_date_iso} → {end_date_iso})…")
+            us_revenue = query_channel_revenue_for_period(
                 yta, ycfg,
-                year=report_year,
-                month=report_month,
+                start_date=start_date_iso,
+                end_date=end_date_iso,
                 group_id=group_id.strip(),
                 country="US",
             )
@@ -238,9 +279,15 @@ with st.expander("3) Generate Report", expanded=True):
 
             st.dataframe(df, use_container_width=True)
 
-            # Download
-            month_str = f"{report_year:04d}-{report_month:02d}"
-            filename = f"cms_deal_report_{month_str}.xlsx"
+            # Download — filename reflects the period
+            start_str = f"{start_year:04d}-{start_month:02d}"
+            end_str = f"{end_year:04d}-{end_month:02d}"
+            if start_str == end_str:
+                period_str = start_str
+            else:
+                period_str = f"{start_str}_to_{end_str}"
+            filename = f"cms_deal_report_{period_str}.xlsx"
+
             st.download_button(
                 label="📥 Download XLSX Report",
                 data=xlsx_bytes,
