@@ -162,6 +162,16 @@ with st.expander("1) Configuration (from secrets)", expanded=True):
     for name, gid in CMS_DEALS_GROUPS:
         st.text(f"  • {name}: {gid}")
 
+    # Partner revenue percentage applied to column L (CMS Deals US)
+    partner_pct = st.number_input(
+        "Partner percentage for CMS Deals (column L)",
+        min_value=0.0,
+        max_value=100.0,
+        value=float(st.secrets.get("cms_deals", {}).get("partner_pct", 10.0)),
+        step=0.5,
+        help="Percentage of CMS Deals US revenue attributed to the partner. Applied as us_sum × (pct/100).",
+    )
+
     # Optional discovery (not required)
     use_discovery = st.checkbox("Load groups from YouTube (discovery)", value=False)
     if use_discovery:
@@ -435,7 +445,7 @@ with st.expander("3) Run", expanded=True):
                     total_sum += cms_deals_total.get(deal_name, {}).get(yyyymm, 0.0)
                     us_sum += cms_deals_us.get(deal_name, {}).get(yyyymm, 0.0)
                 agg_total_per_month[yyyymm] = total_sum
-                agg_us_tax_per_month[yyyymm] = us_sum * 0.1
+                agg_us_tax_per_month[yyyymm] = us_sum * (partner_pct / 100.0)
 
             # -------------------------------------------------------
             # Build updates list
