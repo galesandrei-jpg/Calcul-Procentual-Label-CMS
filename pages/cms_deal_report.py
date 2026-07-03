@@ -108,6 +108,17 @@ with st.expander("2) Group & Period Selection", expanded=True):
             f"({num_months} month{'s' if num_months != 1 else ''})"
         )
 
+    # Partner percentage applied to column L (Gross HaHaHa Partner Revenue)
+    partner_pct = st.number_input(
+        "Partner percentage (column L)",
+        min_value=0.0,
+        max_value=100.0,
+        value=float(st.secrets.get("cms_deals", {}).get("partner_pct", 13.0)),
+        step=0.5,
+        help="Percentage applied to K to compute column L (Gross HaHaHa Partner Revenue).",
+        key="cms_deal_partner_pct",
+    )
+
 # ----- Run -----
 with st.expander("3) Generate Report", expanded=True):
     run = st.button("🚀 Generate Channel Revenue Report", type="primary", key="cms_deal_run")
@@ -239,14 +250,14 @@ with st.expander("3) Generate Report", expanded=True):
                 ws.cell(row=r, column=9, value=f"=F{r}*0.1")        # I: US Tax
                 ws.cell(row=r, column=10, value=f"=C{r}-I{r}")       # J: Gross Partner Revenue
                 ws.cell(row=r, column=11, value=f"=J{r}*0.85")       # K: NET Partner Revenue EUR
-                ws.cell(row=r, column=12, value=f"=K{r}*13%")        # L: Gross HaHaHa Partner Revenue
+                ws.cell(row=r, column=12, value=f"=K{r}*{partner_pct}%")        # L: Gross HaHaHa Partner Revenue
                 ws.cell(row=r, column=13, value=f"=K{r}-L{r}")       # M: Gross Partner Revenue
 
             # Update row 2 SUM formulas to cover actual data range
             ws.cell(row=2, column=9, value=f"=SUM(I{DATA_START_ROW}:I{data_end_row})")
             ws.cell(row=2, column=10, value=f"=SUM(J{DATA_START_ROW}:J{data_end_row})")
             ws.cell(row=2, column=11, value=f"=SUM(K{DATA_START_ROW}:K{data_end_row})")
-            ws.cell(row=2, column=12, value=f"=K2*13%")
+            ws.cell(row=2, column=12, value=f"=K2*{partner_pct}%")
             ws.cell(row=2, column=13, value=f"=K2-L2")
 
             # Also add SUM formulas for columns A–H numeric columns (C–H) in row 2
