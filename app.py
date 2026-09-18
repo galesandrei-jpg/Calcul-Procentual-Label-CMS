@@ -34,6 +34,7 @@ CMS_DEALS_GROUPS = [
     ("Magic", "Qv2RHPCUZOU"),
     ("Pine", "BXowAx3iy4k"),
     ("Malwin", "JGSzjsvdIDk"),
+    ("Unicorn 2", "Lcy1MVF5Fck"),
 ]
 
 # Sheet header names for the new columns
