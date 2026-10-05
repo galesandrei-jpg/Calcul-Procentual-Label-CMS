@@ -8,6 +8,9 @@ from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 
 
+YOUTUBE_API_RETRIES = 5
+
+
 @dataclass
 class YoutubeConfig:
     content_owner: str
@@ -378,10 +381,10 @@ def query_monthly_estimated_revenue(
     )
 
     try:
-        resp = yta.reports().query(**kwargs).execute()
+        resp = yta.reports().query(**kwargs).execute(num_retries=YOUTUBE_API_RETRIES)
     except TypeError:
         kwargs.pop("currency", None)
-        resp = yta.reports().query(**kwargs).execute()
+        resp = yta.reports().query(**kwargs).execute(num_retries=YOUTUBE_API_RETRIES)
 
     out: Dict[str, float] = {}
     for month_str, revenue in (resp.get("rows", []) or []):
@@ -420,10 +423,10 @@ def query_monthly_total_cms_revenue(
         kwargs["filters"] = ";".join(filters_list)
 
     try:
-        resp = yta.reports().query(**kwargs).execute()
+        resp = yta.reports().query(**kwargs).execute(num_retries=YOUTUBE_API_RETRIES)
     except TypeError:
         kwargs.pop("currency", None)
-        resp = yta.reports().query(**kwargs).execute()
+        resp = yta.reports().query(**kwargs).execute(num_retries=YOUTUBE_API_RETRIES)
 
     out: Dict[str, float] = {}
     for month_str, revenue in (resp.get("rows", []) or []):
