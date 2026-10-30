@@ -515,6 +515,10 @@ if preview_clicked:
                     explicit_channels = source_channel_ids(rule.group_id)
                     channel_ids = (list(explicit_channels) if explicit_channels else
                                    [item["channelId"] for item in list_group_items(service, cfg, rule.group_id)])
+                    # Legacy groupItems helper also returns video/asset IDs.
+                    # Only valid channel IDs prove channel-group membership.
+                    for channel_id in channel_ids:
+                        source_channel_ids("channels:" + channel_id)
                     memberships[rule.group_id] = channel_ids
                     if not channel_ids:
                         member_warnings.append(f"No channel IDs returned for {rule.client} ({rule.group_id})")
