@@ -10,6 +10,7 @@ from __future__ import annotations
 import calendar
 import datetime as dt
 import io
+import math
 import re
 import unicodedata
 from dataclasses import dataclass, replace
@@ -296,8 +297,12 @@ def query_monthly_revenue_for_source(yta: Any, cfg: Any, start_date: str,
     )
     # Never retry without currency: YouTube defaults to USD, not EUR.
     response = yta.reports().query(**kwargs).execute(num_retries=5)
-    return {str(month): float(amount or 0.0)
-            for month, amount in response.get("rows", []) or []}
+    result = {}
+    for month, amount in response.get("rows", []) or []:
+        if amount is None or not math.isfinite(float(amount)):
+            raise ClientSplitError("Missing or non-finite YouTube revenue; preview blocked")
+        result[str(month)] = float(amount)
+    return result
 
 
 def read_rules(editor_rows: Sequence[Mapping[str, Any]]) -> List[Rule]:
