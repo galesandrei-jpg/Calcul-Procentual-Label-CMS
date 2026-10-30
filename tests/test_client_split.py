@@ -451,3 +451,13 @@ def test_subcent_inputs_are_not_rounded_before_split():
     assert result["us_withholding"] == pytest.approx(0.1009)
     assert result["client_payable"] == pytest.approx(99.9081 * 0.87)
     assert result["hahahaha_final_net"] == pytest.approx(99.9081 * 0.13 * 0.75)
+
+
+@pytest.mark.parametrize("amount", [None, float("nan"), float("inf")])
+def test_missing_or_nonfinite_api_amount_cannot_become_confirmed_zero(amount):
+    response = types.SimpleNamespace(execute=lambda **kwargs: {"rows": [["2026-08", amount]]})
+    api = types.SimpleNamespace(query=lambda **kwargs: response)
+    service = types.SimpleNamespace(reports=lambda: api)
+    with pytest.raises(ClientSplitError):
+        query_monthly_revenue_for_source(service, types.SimpleNamespace(content_owner="OWNER"),
+                                         "2026-08-01", "2026-08-01", "TEST_GROUP")
