@@ -128,4 +128,6 @@ Open a **draft pull request** and leave it unmerged until finance approves the s
 - Tests use synthetic financial amounts and rate fixtures; these are not contractual records.
 - Before merge: confirm unknown contracts, verify current group membership against historical scope, run an August 2026 read-only comparison, and exercise publish against a staging spreadsheet.
 
-Validation: 63 offline tests pass with the existing pinned Streamlit 1.37.1 and Google dependencies. The original app and CMS Deal Channel Report also load in Streamlit AppTest with no exceptions. All original tracked files remain byte-for-byte unchanged. Live OAuth revenue retrieval and staging Sheets publication remain required before merge; no production write was made.
+Validation: 66 offline tests pass with the existing pinned Streamlit 1.37.1 and Google dependencies. The original app and CMS Deal Channel Report also load in Streamlit AppTest with no exceptions. All original tracked files remain byte-for-byte unchanged. Live OAuth revenue retrieval and staging Sheets publication remain required before merge; no production write was made.
+
+API rows with missing/non-finite amounts are rejected. Group membership must contain valid YouTube channel IDs; video or other resource groups cannot pass channel overlap verification.
