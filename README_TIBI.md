@@ -104,7 +104,7 @@ us_withholding_rate = 10.0
 ```bash
 git switch main
 git pull --ff-only
-git switch -c feat/tibi-client-split
+git switch -c feat/tibi-client-split-forecast
 # From repository root, apply the corresponding .patch file:
 git apply --check /path/to/tibi_client_split_v3.patch
 git apply /path/to/tibi_client_split_v3.patch
@@ -113,7 +113,7 @@ git diff --stat
 # Stage only the new files:
 git add pages/client_split_forecast.py src/client_split.py README_TIBI.md tests/
 git commit -m "feat: add isolated client-level CMS and distribution forecast"
-git push -u origin feat/tibi-client-split
+git push -u origin feat/tibi-client-split-forecast
 ```
 
 Open a **draft pull request** and leave it unmerged until finance approves the source mapping, applicable withholding assumption and intermediary fees.
@@ -121,9 +121,11 @@ Open a **draft pull request** and leave it unmerged until finance approves the s
 ## Review corrections and validation
 
 - EUR is mandatory for both group and channel queries; failures never retry in YouTube’s default USD currency. See [YouTube query currency documentation](https://developers.google.com/youtube/analytics/reference/reports/query#currency).
-- Queries include the last calendar day of the final month.
+- Monthly queries use first-of-month boundaries as required by the [YouTube month dimension](https://developers.google.com/youtube/analytics/dimensions#month); each returned row aggregates that calendar month.
 - Missing total or US analytics rows block payout publication; an explicitly returned zero remains valid.
 - Calculations and detail formulas retain precision; currency formatting and client summaries display cents. Independently rounded displayed components may differ by a cent.
 - Every new preview clears prior approval checkboxes. Changing the live rate source reloads any still-selected Excel snapshot.
 - Tests use synthetic financial amounts and rate fixtures; these are not contractual records.
 - Before merge: confirm unknown contracts, verify current group membership against historical scope, run an August 2026 read-only comparison, and exercise publish against a staging spreadsheet.
+
+Validation: 63 offline tests pass with the existing pinned Streamlit 1.37.1 and Google dependencies. The original app and CMS Deal Channel Report also load in Streamlit AppTest with no exceptions. All original tracked files remain byte-for-byte unchanged. Live OAuth revenue retrieval and staging Sheets publication remain required before merge; no production write was made.
